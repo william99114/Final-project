@@ -67,10 +67,10 @@ function count_recent_failed_logins(PDO $pdo, int $userId, int $periodInSeconds)
  * @param string $student_id
  * @return array|false User data array or false if not found
  */
-function get_user_by_student_id(PDO $pdo, string $student_id) {
+function get_user_by_id(PDO $pdo, string $student_id) {
     // --- 程式碼從 login.php 移入 ---
     $stmt = $pdo->prepare('
-        SELECT id, student_id, email, name, password_hash, is_high_risk, is_first_login
+        SELECT id, student_id, email, name, password_hash, is_high_risk, is_first_login, role
         FROM users
         WHERE student_id = ?
         LIMIT 1

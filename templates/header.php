@@ -38,7 +38,8 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
 
     body {
       margin: 0;                         /* 移除預設外距，避免多出捲動 */
-      font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif; /* 字型族群 Microsoft JhengHei*/
+        font-family: "DFKai-SB", "標楷體", KaiTi, serif;
+      /*font-family: "Noto Sans TC", "Segoe UI", system-ui, -apple-system, sans-serif; /* 字型族群 Microsoft JhengHei*/
       background-image: url("image/bg1.jpg"); /* 背景圖片 */
       background-size: 100% auto;        /* 不變形、充滿整頁 */
       background-position: 50% 10%;
@@ -75,14 +76,16 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
       justify-content:space-between;     /* 左右兩側分散對齊 */
     }
     .brand{                               /* 左上品牌名稱 */
+      font-size:36px;                     /* 品牌名稱大小 */
       font-weight:800;                    /* 加粗 */
       letter-spacing:.02em;               /* 字距略增 */
       color:#0f172a;                      /* 深色文字 */
-       position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
     }
     .nav{ display:flex; gap:16px }        /* 右側導覽連結橫排，連結間距 16px */
+
     .nav a{
       color:var(--primary);               /* 連結文字使用主色 */
       text-decoration:none;               /* 取消底線 */
@@ -119,8 +122,11 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
     .card {
       background: var(--card);            /* 白底 */
       border: 1px solid var(--border);    /* 淡灰邊框 */
-      border-radius: var(--radius);       /* 圓角 */
-      box-shadow: var(--shadow);          /* 柔和陰影 */
+      /*border-radius: var(--radius);       /* 圓角 */
+      /*box-shadow: var(--shadow);          /* 柔和陰影 */
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      border-radius: 20px;
+
       width: 100%;                        /* 先撐滿容器寬 */
       max-width: 500px;                   /* 但不超過 500px（你原本喜歡的視覺比例） */
       /*margin-top: 80px;    👈 卡片往下移 */
@@ -169,35 +175,97 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
     }
     .input:focus,
     input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus{
-      border-color:var(--primary);        /* 聚焦時邊框變藍 */
-      box-shadow:0 0 0 4px var(--ring);   /* 顯示淡藍光暈 */
+      /*border-color:var(--primary);        /* 聚焦時邊框變藍 */
+      /*box-shadow:0 0 0 4px var(--ring);   /* 顯示淡藍光暈 */
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+      border-color: #2563eb;
+
     }
 
     /* 按鈕（共用） */
-    .btn{
-      margin:0 auto;
-      display:flex;                /* 讓文字在按鈕內置中 */
-      align-items:center;                 /* 垂直置中 */
-      justify-content:center;             /* 水平置中 */
-      justify-self: center;
-      width:200px;
-      height:44px;                        /* 高度 */
-      padding:0 18px;                     /* 左右內距 */
-      border:0;                           /* 無邊框 */
-      border-radius:10px;                 /* 圓角 */
-      cursor:pointer;                     /* 滑鼠變點擊手勢 */
-      font-weight:700;                    /* 粗體 */
-      font-size:15px;                     /* 字級 */
-    }
-    .btn.primary {
-      background: #f3f4f6;   /* 灰底 */
-      color: #000;           /* 黑字 */
-    }
-    .btn.primary:hover {
-      background: #e0e0e0;   /* 深灰 */
-  }
+    /* ----------------------------------------------------
+      共用按鈕樣式（所有按鈕都會套用）
+    ---------------------------------------------------- */
+    .btn {
+         /*font-family: "DFKai-SB", "標楷體", KaiTi, serif;  /* ← 加這行 */
+        margin: 0 auto;
 
-    .btn.block{ width:100% }                                   /* 需要滿寬按鈕可加此類別 */
+        /* 使用 flex 讓按鈕內的文字水平＋垂直置中 */
+        display: flex;
+        align-items: center;     
+        justify-content: center; 
+
+        justify-self: center;     /* 若按鈕在 grid 中也可置中 */
+        width: 200px;             /* 固定寬度：你原本的設定 */
+        height: 44px;             /* 固定高度 */
+
+        padding: 0 18px;          /* 左右內距，讓按鈕看起來更寬鬆 */
+
+        border: 1px solid #8d8d8dff;   /* ← 加上框線 */
+        border-radius: 10px;      /* 圓角按鈕 */
+
+        cursor: pointer;          /* 滑鼠變成點擊手勢 */
+
+        font-weight: 700;         /* 文字為粗體 */
+        font-size: 15px;          /* 字體大小 */
+
+        /* 過渡效果（讓 hover / active 更柔順） */
+        transition:
+            background 0.25s ease,
+            transform 0.15s ease,
+            box-shadow 0.25s ease;
+    }
+
+    /* ----------------------------------------------------
+      主按鈕 primary（你原本的灰色主按鈕）
+    ---------------------------------------------------- */
+    .btn.primary {
+        background: #e5e7eb;       /* 淺灰色背景 */
+        color: #000;               /* 黑字 */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.12); /* 微陰影，讓按鈕更立體 */
+    }
+
+    /* 滑鼠移入（hover） → 顏色變深＋變高（浮起） */
+    .btn.primary:hover {
+        background: #bebfc3ff;       /* 稍深的灰色 */
+        box-shadow: 0 4px 10px rgba(0,0,0,0.30); /* 更明顯的陰影 */
+        transform: translateY(-2px); /* 往上浮 2px */
+    }
+
+    /* 按下（active） → 按鈕回到原位＋陰影變小 */
+    .btn.primary:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.30);
+        background: #9b9b9bff;       /* 按下時再深一點 */
+    }
+
+    /* ----------------------------------------------------
+      Focus 樣式（鍵盤 Tab 能看到按鈕輪廓）
+    ---------------------------------------------------- */
+    .btn:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.4);
+        /* 使用藍色外圈 → 提升鍵盤操作可用性 */
+    }
+
+    /* ----------------------------------------------------
+      block 按鈕（滿寬版，可用在手機版）
+    ---------------------------------------------------- */
+    .btn.block {
+        width: 100%;
+    }
+
+    /* ----------------------------------------------------
+      disabled（禁用）按鈕
+      常用於：登入按鈕在送出表單後 disable
+    ---------------------------------------------------- */
+    .btn:disabled {
+        opacity: 0.5;              /* 半透明 → 提示不可用 */
+        cursor: not-allowed;       /* 滑鼠顯示禁止符號 */
+        box-shadow: none;          /* 禁用時不讓它浮起 */
+        transform: none;           /* 禁止任何位移效果 */
+    }
+
 
     /* 連結樣式 */
     .link{ color:var(--primary); text-decoration:none }        /* 藍色、無底線 */
@@ -205,7 +273,7 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
 
     /* 訊息框（錯誤/成功） */
     .msg{
-      margin:12px 0 0;                   /* 與上方留白 */
+      margin:20px 0 ;                   /* 與上方留白 */
       padding:12px;                      /* 內距 */
       border-radius:10px;                /* 圓角 */
       border:1px solid #fecaca;          /* 淡紅邊框 */
@@ -222,14 +290,14 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
       margin-bottom:8px;
       color:#000;
       margin-top:12px;
-      font-size:12px;
+      font-size:16px;
       text-align:center;
     }
 
     /* ===== 頁尾樣式 ===== */
     .footer{
-       color: #6b7280;
-    background: transparent;
+      color: #6b7280;
+      background: transparent;
     
       backdrop-filter: blur(4px);
       border-radius: 6px;
@@ -241,7 +309,7 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
       margin: 0 auto;      /* ✔ 置中成功 */
 
       text-align: center;  
-      font-size: 12px;
+      font-size: 16px;
     }
 
 
@@ -322,7 +390,7 @@ $username   = $isLoggedIn ? ($_SESSION['user']['name'] ?? '') : '';
   <nav class="nav"> <!-- 右側導覽連結 -->
     <?php if ($isLoggedIn): ?>
     <a href="/auth2fa/public/dashboard.php">主頁</a>
-    <a href="/auth2fa/public/logout.php">登出</a>
+    <a href="/auth2fa/public/logout_confirm.php">登出</a>
 <?php else: ?>
     <!-- 不顯示登入連結 -->
 <?php endif; ?>

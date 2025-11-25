@@ -9,9 +9,9 @@ error_reporting(E_ALL);
 if (PHP_VERSION_ID >= 70300) {
     session_set_cookie_params([
         'path'     => '/',
-        'httponly' => true, //避免 JavaScript 讀取 Cookie，防止 XSS 偷 Session
-        'samesite' => 'Lax', //防止 CSRF 攻擊
-        'secure'   => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'), //只有在 HTTPS 下才能傳送 Cookie，避免中間人攻擊竊聽
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
     ]);
 }
 session_start();
@@ -19,16 +19,17 @@ session_start();
 require_once __DIR__ . '/../lib/auth.php'; // 內含 $pdo、TOTP 等
 
 // 📍 修改點：修改常數定義
-// 📍 1. 鎖定規則：5 次機會 / 60 秒內
-define('LOGIN_ATTEMPTS_LIMIT', 2); // 允許的最大連續失敗次數 (5 次機會)
-define('LOGIN_BASE_PERIOD', 60);  // 基礎檢查週期 (檢查 60 秒內的失敗紀錄)
+// 📍 1. 鎖定規則：2 次機會 / 10 秒內
+define('LOGIN_ATTEMPTS_LIMIT', 2); // 允許的最大連續失敗次數 (2 次機會)
+define('LOGIN_BASE_PERIOD', 10);  // 基礎檢查週期 (檢查 10 秒內的失敗紀錄)
 
 // 📍 2. 修改點：移除漸進式陣列，改成固定 60 秒
-define('LOCKOUT_DURATION_SECONDS', 60); // 每次鎖定 1 分鐘 (60 秒)
+define('LOCKOUT_DURATION_SECONDS', 10); // 每次鎖定 10 秒)
 
 // 🟩 3. IP 封鎖相關常數 (保留)
-define('IP_LOCK_LIMIT_TO_BAN', 3); // IP 觸發 5 次「帳號鎖定」後，BAN 掉 IP
-define('IP_LOCK_CHECK_PERIOD_HOURS', 24); // 檢查 IP 過去 24 小時的鎖定次數
+define('PERM_LOCK_TRIGGER_COUNT', 2); // 帳號被「暫時鎖定」 5 次
+define('PERM_LOCK_LOG_CHECK', 4);  // 就去檢查最近 10 筆登入日誌
+define('PERM_LOCK_IP_VARIETY', 3);   // 日誌中若有 3 個 (含) 以上的不同 IP，就永久鎖定該「學號」
 
 // === CSRF（建議保留） ===
 if (empty($_SESSION['csrf'])) {
@@ -129,11 +130,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Step 1：輸入學號
         $student_id = trim($_POST['student_id'] ?? '');
         $inputStudentId = $student_id;
-        if (!preg_match('/^[0-9]{9}$/', $student_id)) { // 📍 改：學號格式驗證（9位數字）
-            $msg = '請輸入正確的學號（9位數字）';
+       if ($student_id === '') { // ✅  只要不是空的就可以
+            $msg = '請輸入學號或教師帳號';
             $step = 1;
         } else {
-            $user = get_user_by_student_id($pdo, $student_id); // lib/auth.php
+            $user = get_user_by_id($pdo, $student_id); // lib/auth.php
 
             if ($user === false) {
                 $msg = '查無此學號，請確認是否正確。';
@@ -157,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $codeInput  = strtoupper(trim($_POST['captcha'] ?? ''));
         $codeSess   = strtoupper($_SESSION['VerifyCode'] ?? '');
 
-        $user = ($student_id !== '') ? get_user_by_student_id($pdo, $student_id) : false; // lib/auth.php
+        $user = ($student_id !== '') ? get_user_by_id($pdo, $student_id) : false; // lib/auth.php
         $userId = $user ? (int)$user['id'] : null;
 
                 // 基本檢查
@@ -195,25 +196,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // 登入成功：重置 session id 防止 fixation
                     //session_regenerate_id(true); // 🟩 新增：重要
 
-                    // --- 密碼正確 ---
                     $loggedInUser = $loginResult;
-
-                    // 清除鎖定紀錄
-                    // 📍 修改點：登入成功時，清除鎖定紀錄並「重設」鎖定計數器
+    
+                    // --- 🛑 除錯開始：請暫時加入這幾行 ---
+                    $userId = $loggedInUser['id']; // 確保從登入結果拿到正確 ID
+    
                     if ($userId !== null) {
-                        try {
-                            $pdo->prepare("
-                                UPDATE account_lockouts 
-                                SET 
-                                    unlocked_at = NOW(), 
-                                    unlock_reason = '登入成功自動解鎖',
-                                    lockout_count = 0 
-                                WHERE user_id = ? AND unlocked_at IS NULL
-                            ")->execute([$userId]);
-                        } catch (PDOException $e) {
-                            error_log("Failed to clear lockouts/reset count for user ID {$userId}: " . $e->getMessage());
-                        }
-                    }
+                   try {
+                        $stmt = $pdo->prepare("
+                        UPDATE account_lockouts 
+                         SET 
+                         unlocked_at = NOW(), 
+                         unlock_reason = '登入成功自動解鎖',
+                         warp_up = 1
+                        WHERE user_id = ? AND warp_up = 0
+                      ");
+                     $stmt->execute([$userId]);
+               } catch (PDOException $e) {
+                error_log("解鎖更新失敗: " . $e->getMessage());
+               }
+              } 
                     // 📍 修改結束
 
                     unset($_SESSION['pending_login_id']);
@@ -223,7 +225,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'id'         => $loggedInUser['id'],
                         'student_id' => $loggedInUser['student_id'],
                         'email'      => $loggedInUser['email'],
-                        'name'       => $loggedInUser['name']
+                        'name'       => $loggedInUser['name'],
+                         'role'       => $user['role'] ?? 'student',
                     ];
 
                     // 判斷高風險或首次登入
@@ -240,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         // 一般使用者直接登入
                         $_SESSION['user'] = $sessionUserData;
-                        log_login($pdo, $userId, $student_id, true);
+                        log_login($pdo, $userId, $student_id, true,'密碼正確');
 
                         // 🟩 如果未來要實作「記住裝置」，可在此設置 cookie（注意要簽名/HMAC）
                         // setcookie('trusted_device', $signed_value, time()+60*60*24*14, '/', '', true, true);
@@ -254,90 +257,126 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($userId !== null) {
                          $failedAttempts = count_recent_failed_logins($pdo, $userId, LOGIN_BASE_PERIOD); // lib/auth.php
+                         
                         if ($failedAttempts >= LOGIN_ATTEMPTS_LIMIT) {
+                            $activeLockId = null;     // 目前正在進行中的鎖定 ID
                              // 📍 新增點：查詢目前的鎖定等級
                             $currentLockCount = 0;                                                    
                             // 📍 7. 修改點：鎖定時間固定為常數
                             $newLockDuration = LOCKOUT_DURATION_SECONDS; // 總是鎖 60 秒
                             try {
                                     $stmt = $pdo->prepare("
-                                        SELECT lockout_count 
+                                        SELECT id,lockout_count 
                                         FROM account_lockouts 
-                                        WHERE user_id = ?                                      
-                                        ORDER BY locked_at DESC 
+                                        WHERE student_id = ? AND warp_up = 0                                    
+                                        ORDER BY id DESC 
                                         LIMIT 1
                                     ");
-                                    $stmt->execute([$userId]);
+                                    $stmt->execute([$student_id]);
                                     $row = $stmt->fetch();
 
                                     if ($row) {
                                         // 仍在鎖定中(或剛鎖定)，計數器繼承
+                                        $activeLockId = $row['id'];
                                         $currentLockCount = (int)$row['lockout_count'];
                                     } else {
                                         // 上次鎖定已過期，或從未鎖過，計數器重設為 0
                                         $currentLockCount = 0;
                                     }
-                                } catch (PDOException $e) {
-                                    error_log("Failed to query lockout_count for user ID {$userId}: " . $e->getMessage());
-                                    // 發生錯誤時，預設計數為 0
-                                }
-                            // 📍 新增點：決定新的鎖定等級和時間
-                            $newLockCount = $currentLockCount + 1;
-                           
-                            try {
-                                $pdo->prepare("
-                                    INSERT INTO account_lockouts (user_id, student_id, locked_until, ip_address, locked_at, lockout_count)
-                                    VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, NOW(), ?)
-                                    ON DUPLICATE KEY UPDATE
-                                        locked_until = VALUES(locked_until),
-                                        locked_at = NOW(),
-                                        ip_address = VALUES(ip_address),
-                                        lockout_count = VALUES(lockout_count), 
-                                        unlocked_at = NULL,
-                                        unlock_reason = NULL
-                                ")->execute([$userId, $student_id, $newLockDuration, $userIp, $newLockCount]); // 傳入新的秒數和次數
                                 
+                                  // 📍 新增點：決定新的鎖定等級和時間
+                                  $newLockCount = $currentLockCount + 1;
+                                  if ($activeLockId) {
+                                 // 【情境 A】更新現有鎖定 (延長時間、增加次數)
+                                 $pdo->prepare("
+                                       UPDATE account_lockouts
+                                       SET 
+                                           locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND),
+                                           locked_at = NOW(),
+                                           ip_address = ?,
+                                           lockout_count = ?,
+                                           unlocked_at = NULL
+                                           WHERE id = ?
+                                 ")->execute([$newLockDuration, $userIp, $newLockCount, $activeLockId]);
+                                } else {
+                                // 【情境 B】插入全新鎖定 (因為上次的已經 wrap up 了)
+                                // 注意：這要求資料庫 schema 不要在 user_id/student_id 上設 UNIQUE 索引
+$pdo->prepare("
+                    INSERT INTO account_lockouts 
+                    (user_id, student_id, locked_until, ip_address, locked_at, lockout_count, warp_up)
+                    VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, NOW(), ?, 0)
+                ")->execute([
+                    $userId,           // 對應 第1個 ? (user_id)
+                    $student_id,       // 對應 第2個 ? (student_id)
+                    $newLockDuration,  // 對應 第3個 ? (秒數)
+                    $userIp,           // 對應 第4個 ? (ip)
+                    $newLockCount      // 對應 第5個 ? (次數)
+                ]);
+                                }
+                                                
                                 $msg = "密碼錯誤，且已達嘗試上限，帳號已被暫時鎖定 {$newLockDuration} 秒。";
 
                                 // 🟩 8. 檢查 IP 應不應該被 Ban (保留)
-                                    $ipLockCount = 0;
-                                    try {
-                                        // 查詢此 IP 在過去 24 小時內觸發了多少次「帳號鎖定」
-                                        $stmt = $pdo->prepare("
-                                            SELECT COUNT(id) 
-                                            FROM account_lockouts 
-                                            WHERE ip_address = ? 
-                                              AND locked_at > DATE_SUB(NOW(), INTERVAL ? HOUR)
-                                        ");
-                                        $stmt->execute([$userIp, IP_LOCK_CHECK_PERIOD_HOURS]);
-                                        $ipLockCount = (int)$stmt->fetchColumn();
+                                   if ($newLockCount >= PERM_LOCK_TRIGGER_COUNT) { 
+                                     
+                                     try {
+                                         // 查詢最近 10 筆「所有」失敗日誌 (不受 60 秒限制)
+                                         $stmt_logs = $pdo->prepare("
+                                             SELECT ip 
+                                             FROM login_logs 
+                                             WHERE student_id = ? AND success = 0 AND ip IS NOT NULL
+                                             ORDER BY id DESC
+                                             LIMIT ?
+                                         ");
+                                         $stmt_logs->execute([$student_id, PERM_LOCK_LOG_CHECK]); // 10
+                                         $recent_failed_ips = $stmt_logs->fetchAll(PDO::FETCH_COLUMN);
+                                         //執行你剛剛準備好的資料庫查詢 ($stmt_logs)，然後把所有的查詢結果都拿回來，存放到 $recent_failed_ips 這個變數裡
 
-                                    } catch (PDOException $e) {
-                                        if ($e->getCode() !== '42S02') { 
-                                            error_log("IP lock count check failed for IP {$userIp}: " . $e->getMessage());
-                                        }
-                                    }
+                                         $failure_count = count($recent_failed_ips); // 實際查到的筆數
+                                         
+                                         // 確保真的有 10 筆失敗紀錄才檢查
+                                         if ($failure_count >= PERM_LOCK_LOG_CHECK) {
+                                             $distinct_ips = array_unique($recent_failed_ips);//移除陣列中所有重複的值，只留下獨一無二的值。
+                                             $ip_variety_count = count($distinct_ips);//計算陣列中值有幾個項目
 
-                                    if ($ipLockCount >= IP_LOCK_LIMIT_TO_BAN) {
-                                        // 觸發 IP 封鎖
-                                        try {
-                                            $pdo->prepare("
-                                                INSERT INTO ip_bans (ip_address, reason) 
-                                                VALUES (?, ?)
-                                                ON DUPLICATE KEY UPDATE ban_at = NOW(), reason = VALUES(reason)
-                                            ")->execute([$userIp, "Triggered account lock {$ipLockCount} times in ".IP_LOCK_CHECK_PERIOD_HOURS."h."]);
-                                            
-                                            $msg = "您的 IP 位址因觸發過多錯誤已被系統永久鎖定。";
+                                             if ($ip_variety_count >= PERM_LOCK_IP_VARIETY) {
+                                                 // 規則 2：IP 種類 >= 3 -> 永久鎖定「學號」
+                                                 $perm_lock_reason = "帳號因 (鎖定 {$newLockCount} 次) 且 (最近 " . PERM_LOCK_LOG_CHECK . " 筆失敗含 {$ip_variety_count} 個 IP) 被永久鎖定。";
+                                                 $pdo->prepare("
+                                                     UPDATE account_lockouts SET locked_until = '9999-12-31 23:59:59', unlock_reason = ? WHERE user_id = ?
+                                                 ")->execute([$perm_lock_reason, $userId]);
 
-                                        } catch (PDOException $e) {
-                                            if ($e->getCode() !== '42S02') {
-                                                error_log("Failed to insert IP ban for {$userIp}: " . $e->getMessage());
-                                            }
-                                        }
-                                    }
+                                                 $msg = "此帳號因偵測到異常活動（多次鎖定並由不同 IP 登入），已被系統永久鎖定。請聯繫管理員。";
+                                                 $step = 1; // 踢回第一步
+
+                                             } elseif ($ip_variety_count === 1) {
+                                                 // 規則 1：10 次都來自同 1 個 IP -> 永久封鎖「IP」
+                                                 $ip_to_ban = $distinct_ips[0]; 
+                                                 $perm_lock_reason = "IP 因 (對 {$student_id} 失敗 " . PERM_LOCK_LOG_CHECK . " 次) 被永久封鎖。";
+                                                 
+                                                 $pdo->prepare("
+                                                                INSERT INTO ip_bans (ip_address, student_id, reason) 
+                                                                VALUES (?, ?, ?)
+                                                                ON DUPLICATE KEY UPDATE 
+                                                                ban_at = NOW(), 
+                                                                student_id = VALUES(student_id), 
+                                                                reason = VALUES(reason)
+                                                       ")->execute([$ip_to_ban, $student_id, $perm_lock_reason]);
+
+                                                 $msg = "此 IP ({$ip_to_ban}) 因登入失敗次數過多，已被系統永久封鎖。";
+                                                 $step = 1; // 踢回第一步
+                                             }
+                                             // ( else: IP 種類是 2，不觸發規則)
+                                         }
+                                         // ( else: 失敗紀錄還不到 10 筆，不觸發規則)
+
+                                     } catch (PDOException $e) {
+                                         error_log("Failed to check or apply permanent ban for student_id {$student_id}: " . $e->getMessage());
+                                     }
+                                 } // [END 永久鎖定邏輯]
                                     // 🟩 IP Ban 邏輯結束
                             } catch (PDOException $e) {
-                                error_log("Failed to insert/update progressive lockout for user ID {$userId}: " . $e->getMessage());
+                                die("資料庫錯誤代碼: " . $e->getMessage());
                                 $msg = '密碼錯誤，請再試一次。（系統記錄鎖定時發生錯誤）';
                             }
                         } else {
@@ -370,7 +409,7 @@ $pageTitle = '登入';
 include __DIR__ . '/../templates/header.php';
 ?>
 <div class="card">
-  <div style="text-align:center;"><h2>登入</h2></div>
+  <h2>登入</h2>
 
   <?php if ($step === 1): ?>
     <!-- Step 1：輸入學號 -->
@@ -380,17 +419,13 @@ include __DIR__ . '/../templates/header.php';
       <div class="row">
         <label>學號</label>
         <input name="student_id" type="text" required
-               pattern="[0-9]{9}"
-               maxlength="9"
-               placeholder="例如：411106236"
+                placeholder="請輸入學號或教師帳號"
                value="<?= htmlspecialchars($inputStudentId) ?>">
       </div>
-      
-      <button class="btn primary" type="submit">下一步</button>
-      
+      <button class="btn" type="submit">下一步</button>
     </form>
 
-    
+    <p class="muted"><a class="link" href="./forgot_password.php">忘記密碼？</a></p>
 
   <?php elseif ($step === 2): ?>
     <!-- Step 2：密碼 + CAPTCHA -->
@@ -415,9 +450,6 @@ include __DIR__ . '/../templates/header.php';
                   style="position:absolute; right:5px; top:5px; border:none; background:none; cursor:pointer;">
             👁️
           </button>
-          <p class="muted" style="margin-top:8px;">
-      <a class="link" href="./forgot_password.php">忘記密碼？</a>
-    </p>
         </div>
         <div id="capsWarning" style="color:red; display:none; font-size:12px; margin-top:4px;">
           ⚠️ Caps Lock 已開啟
@@ -448,13 +480,12 @@ include __DIR__ . '/../templates/header.php';
         </div>
       </div>
 
-      <button class="btn primary" type="submit">登入</button>
-
-      
-
+      <button class="btn" type="submit">登入</button>
     </form>
 
-    
+    <p class="muted" style="margin-top:8px;">
+      <a class="link" href="./forgot_password.php">忘記密碼？</a>
+    </p>
   <?php endif; ?>
 
   <?php if ($msg): ?>
@@ -506,8 +537,5 @@ function refreshCaptcha(){
   img.addEventListener('load', stop);
   img.addEventListener('error', stop);
 }
-
-
-
 </script>
 <?php include __DIR__ . '/../templates/footer.php'; ?>
